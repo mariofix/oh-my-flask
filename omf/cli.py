@@ -10,7 +10,7 @@ from omf.commands import run as run_cmd
 from omf.commands import shell as shell_cmd
 from omf.commands import skeleton as skeleton_cmd
 from omf.commands import update as update_cmd
-
+from omf.commands import crosscheck as crosscheck_cmd
 
 @click.group(help="oh-my-flask: recipe-based personal tool installer.")
 @click.version_option(__version__, prog_name="omf")
@@ -25,6 +25,7 @@ main.add_command(update_cmd.self_update, name="self-update")
 main.add_command(recipes_cmd.recipes)
 main.add_command(shell_cmd.shell)
 main.add_command(skeleton_cmd.skeleton)
+main.add_command(crosscheck_cmd.crosscheck)
 
 
 if __name__ == "__main__":
