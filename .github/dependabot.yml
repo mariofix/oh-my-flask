@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-type: "all"
+    assignees:
+      - "mariofix"
+    commit-message:
+      prefix: "packages"
+      prefix-development: "dev packages"
+      include: "scope"
+    groups:
+      python-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    allow:
+      - dependency-type: "all"
+    commit-message:
+      prefix: "actions"
+      prefix-development: "dev actions"
+      include: "scope"
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
