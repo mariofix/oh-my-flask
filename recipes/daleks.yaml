@@ -1,0 +1,15 @@
+kind: install
+description: Clone and configure the daleks toolkit.
+git: https://github.com/mariofix/daleks.git
+ref: main
+
+env:
+  DALEKS_HOME: "${HOME}/.omf/installed/daleks"
+
+post_install:
+  - python -m venv .venv
+  - .venv/bin/pip install --upgrade pip
+  - .venv/bin/pip install -e .
+  - echo "daleks installed. activate with: source $PWD/.venv/bin/activate"
+
+run: ".venv/bin/daleks"

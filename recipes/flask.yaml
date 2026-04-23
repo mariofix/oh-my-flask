@@ -1,0 +1,3 @@
+kind: skeleton
+description: Minimal Flask app skeleton.
+skeleton: flask

@@ -1,0 +1,3 @@
+kind: skeleton
+description: The database backup script
+skeleton: flask
