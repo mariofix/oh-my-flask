@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# =============================================================================
+# MariaDB Backup Script
+# Location: /home/user/apps/backup/backup.sh
+# =============================================================================
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+BACKUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KEEP_DAYS=3                        # Retention period in days
+DB_USER=""
+DB_PASSWORD=""                     # Leave empty to use ~/.my.cnf or socket auth
+DB_HOST=""
+DB_PORT="3306"
+INCLUDE_DATABASES="" #space separated
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_FILE="${BACKUP_DIR}/backup.log"
+GZIP_LEVEL=6                       # 1 (fast) → 9 (best compression)
+SENTRY_CRONS="" # Sentry Cron URL
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+log()        { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
+error_exit() { log "ERROR: $*"; exit 1; }
+
+db_opts() {
+    local opts=(-u"$DB_USER" -h"$DB_HOST" -P"$DB_PORT")
+    [[ -n "$DB_PASSWORD" ]] && opts+=(-p"$DB_PASSWORD")
+    echo "${opts[@]}"
+}
+
+sentry_checkin() {
+    local status="$1"   # in_progress | ok | error
+    [[ -z "$SENTRY_CRONS" ]] && return 0
+    curl -sf --max-time 5 "${SENTRY_CRONS}?status=${status}" 2>>"$LOG_FILE" \
+        || log "WARN: Sentry check-in (${status}) failed - non-fatal, continuing."
+}
+
+# ---------------------------------------------------------------------------
+# Preflight
+# ---------------------------------------------------------------------------
+command -v mariadb-dump &>/dev/null || error_exit "mariadb-dump not found in PATH."
+command -v gzip         &>/dev/null || error_exit "gzip not found in PATH."
+mkdir -p "$BACKUP_DIR"             || error_exit "Cannot create backup dir: $BACKUP_DIR"
+
+# ---------------------------------------------------------------------------
+# Sentry - open check-in
+# ---------------------------------------------------------------------------
+sentry_checkin "in_progress"
+log "Starting MariaDB backup - databases: ${INCLUDE_DATABASES} - retention: ${KEEP_DAYS} days"
+
+# ---------------------------------------------------------------------------
+# Backup databases
+# ---------------------------------------------------------------------------
+BACKED_UP=0
+FAILED=0
+
+for DB in $INCLUDE_DATABASES; do
+    OUTFILE="${BACKUP_DIR}/${DB}_${TIMESTAMP}.sql.gz"
+    log "Backing up: ${DB} → $(basename "$OUTFILE")"
+
+    # shellcheck disable=SC2046
+    if mariadb-dump $(db_opts) \
+            --single-transaction \
+            --routines \
+            --triggers \
+            --events \
+            --add-drop-database \
+            --databases "$DB" 2>>"$LOG_FILE" \
+        | gzip -"$GZIP_LEVEL" > "$OUTFILE"; then
+        SIZE=$(du -sh "$OUTFILE" | cut -f1)
+        log "  ✓ ${DB} - ${SIZE}"
+        (( BACKED_UP++ )) || true
+    else
+        log "  ✗ FAILED: ${DB}"
+        rm -f "$OUTFILE"
+        (( FAILED++ )) || true
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Rotate old backups
+# ---------------------------------------------------------------------------
+log "Rotating backups older than ${KEEP_DAYS} days..."
+DELETED=$(find "$BACKUP_DIR" -maxdepth 1 -name "*.sql.gz" \
+    -mtime +"$KEEP_DAYS" -print -delete | wc -l)
+log "Purged ${DELETED} old backup file(s)."
+
+# ---------------------------------------------------------------------------
+# Summary + Sentry close check-in
+# ---------------------------------------------------------------------------
+log "Done - success: ${BACKED_UP}, failed: ${FAILED}"
+
+if [[ "$FAILED" -gt 0 ]]; then
+    sentry_checkin "error"
+    exit 1
+else
+    sentry_checkin "ok"
+    exit 0
+fi
